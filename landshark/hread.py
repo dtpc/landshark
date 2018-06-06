@@ -1,139 +1,117 @@
 """Read features and targets from HDF5 files."""
 
+from types import TracebackType
 import numpy as np
 import tables
-from typing import Iterable, Tuple, Union, List, Any
+from typing import Union, Tuple
+from landshark.image import ImageSpec
+from landshark.basetypes import (ArraySource, OrdinalArraySource,
+                                 CategoricalArraySource, FeatureValues,
+                                 FixedSlice)
+from landshark.category import CategoryInfo
 
-from landshark import image
-from landshark.rowcache import RowCache
 
+class H5ArraySource(ArraySource):
 
-class ImageFeatures:
-    """Reader for getting categorical and ordinal features from an HDF5 file.
+    _array_name = ""
 
-    Parameters
-    ----------
-    filename : str
-        The path the the HDF5 file containing the image data.
-    cache_blocksize : int
-        The blocksize (in rows) to use for caching the reads of the HDF5.
-    cache_nblocks : int
-        The number of blocks to hold in a cache at any time.
+    def __init__(self, path: str) -> None:
+        self._path = path
+        with tables.open_file(self._path, "r") as hfile:
+            carray = hfile.get_node("/" + self._array_name)
+            self._shape = tuple(list(carray.shape) +
+                                [carray.atom.dtype.shape[0]])
+            self._missing = carray.attrs.missing
+            array_cols = hfile.get_node("/" + self._array_name + "_columns")
+            self._columns = [s.decode() for s in array_cols.read()]
+            self._native = carray.chunkshape[0]
+            self._dtype = carray.atom.dtype.base
 
-    """
+    def __enter__(self) -> None:
+        self._hfile = tables.open_file(self._path, "r")
+        self._carray = self._hfile.get_node("/" + self._array_name)
+        if hasattr(self._hfile.root, "coordinates"):
+            self._coords = self._hfile.root.coordinates
+        super().__enter__()
 
-    def __init__(self, filename: str, cache_blocksize: int,
-                 cache_nblocks: int) -> None:
-        """Initialise an ImageFeatures object."""
-        self._hfile = tables.open_file(filename)
-        x_coordinates = self._hfile.root.x_coordinates.read()
-        y_coordinates = self._hfile.root.y_coordinates.read()
-        height = self._hfile.root._v_attrs.height
-        width = self._hfile.root._v_attrs.width
-        crs = self._hfile.root._v_attrs.crs
-        assert len(x_coordinates) == width + 1
-        assert len(y_coordinates) == height + 1
-        spec = image.ImageSpec(x_coordinates, y_coordinates, crs)
-        self.image_spec = spec
-        self.ord, self.cat = None, None
-        if hasattr(self._hfile.root, 'ordinal_data'):
-            self.ord = Features(
-                self._hfile.root.ordinal_data,
-                cache_blocksize,
-                cache_nblocks
-                )
-        if hasattr(self._hfile.root, 'categorical_data'):
-            self.cat = Features(
-                self._hfile.root.categorical_data,
-                cache_blocksize,
-                cache_nblocks
-                )
-            self.cat.ncategories = \
-                self._hfile.root.categorical_data._v_attrs.ncategories
+    def __exit__(self, ex_type: type, ex_val: Exception,
+                 ex_tb: TracebackType) -> None:
+        self._hfile.close()
+        del(self._carray)
+        if hasattr(self, "_coords"):
+            del(self._coords)
+        del(self._hfile)
+        super().__exit__(ex_type, ex_val, ex_tb)
 
-    def pixel_indices(self, batchsize: int) \
-            -> Iterable[Tuple[np.ndarray, np.ndarray]]:
-        """Create a generator of batches of coordinates from an image.
-
-        This will iterate through ALL of the pixel coordinates an HDF5 file,
-        so is useful for querying/prediction.
-
-        Parameters
-        ----------
-        batchsize : int
-            the number of coorinates to yield at once.
-
-        Yields
-        ------
-        im_coords_x : ndarray
-            the x coordinates (width) of the image in pixels indices, of shape
-            (batchsize,).
-        im_coords_y : ndarray
-            the y coordinates (height) of the image in pixels indices, of shape
-            (batchsize,).
-
+    def _arrayslice(self, start: int, end: int) -> \
+            Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
-        pixel_it = image.coords_query(self.image_spec.width,
-                                      self.image_spec.height, batchsize)
-        return pixel_it
-
-
-class Features:
-    """Reader for getting image features from an HDF5 array.
-
-    Parameters
-    ----------
-    carray : tables.carray.CArray
-        Then HDF5 array where the data is stored.
-    missing_values : list
-        The missing data values per feature index in ``carray``.
-    cache_blocksize : int
-        The blocksize (in rows) to use for caching the reads of the HDF5.
-    cache_nblocks : int
-        The number of blocks to hold in a cache at any time.
-
-    """
-
-    def __init__(
-            self,
-            carray: tables.carray.CArray,
-            cache_blocksize: int,
-            cache_nblocks: int
-            ) -> None:
-        """Initialise a Features object."""
-        self._carray = carray
-        self._missing_values = carray.attrs.missing_values
-        self._cache = RowCache(carray, cache_blocksize, cache_nblocks)
-
-    @property
-    def nfeatures(self) -> Any:
-        """Get the number of features in the HDF5 file."""
-        return self._carray.atom.shape[0]
-
-    @property
-    def dtype(self) -> Any:
-        """Get the type of features in the HDF5 file."""
-        return self._carray.atom.dtype.base
-
-    @property
-    def missing_values(self) -> List[Union[None, float, int]]:
-        """Get the list of missing values for each feature."""
-        return self._missing_values
-
-    def __call__(self, y: int, x_slice: slice) -> np.ndarray:
-        """Read values from the HDF5 file.
-
-        Parameters
-        ----------
-        y : int
-            The row (y) index of the slice.
-        x_slice: slice
-            The slice in x over the row specificed by idx.
-
-        Returns
-        -------
-        d : np.ndarray
-            The contiguous block of data from that location in the image.
-
+        TODO: Note this is bad because I'm changing the return type.
         """
-        return self._cache(y, x_slice)
+        data = self._carray[start:end]
+        if hasattr(self, "_coords"):
+            coords = self._coords[start:end]
+            return data, coords
+        else:
+            return data
+
+
+class OrdinalH5ArraySource(H5ArraySource, OrdinalArraySource):
+    _array_name = "ordinal_data"
+
+
+class CategoricalH5ArraySource(H5ArraySource, CategoricalArraySource):
+    _array_name = "categorical_data"
+
+
+class H5Features:
+    """
+    Note unlike the array classes this isn't picklable.
+    """
+    def __init__(self, h5file: str) -> None:
+
+        self.ordinal, self.categorical, self.coordinates = None, None, None
+        self._hfile = tables.open_file(h5file, "r")
+        if hasattr(self._hfile.root, "ordinal_data"):
+            self.ordinal = self._hfile.root.ordinal_data
+            self.ordinal.mean = self._hfile.root.ordinal_data.attrs.mean
+            self.ordinal.variance = \
+                self._hfile.root.ordinal_data.attrs.variance
+            self.ordinal.missing = self._hfile.root.ordinal_data.attrs.missing
+        if hasattr(self._hfile.root, "categorical_data"):
+            self.categorical = self._hfile.root.categorical_data
+            maps = self._hfile.root.categorical_mappings.read()
+            counts = self._hfile.root.categorical_counts.read()
+            self.categorical.missing = \
+                self._hfile.root.categorical_data.attrs.missing
+            self.categorical.maps = CategoryInfo(maps, counts)
+        if self.ordinal:
+            self._n = len(self.ordinal)
+        if self.categorical:
+            self._n = len(self.categorical)
+        if self.ordinal and self.categorical:
+            assert len(self.ordinal) == len(self.categorical)
+
+    def __len__(self) -> int:
+        return self._n
+
+    def rows(self, rows: FixedSlice) -> FeatureValues:
+        ord_data = None
+        cat_data = None
+        if self.ordinal:
+            ord_data = self.ordinal[rows.start:rows.stop]
+        if self.categorical:
+            cat_data = self.categorical[rows.start:rows.stop]
+        return FeatureValues(ord_data, cat_data)
+
+    def __del__(self) -> None:
+        self._hfile.close()
+
+
+def read_image_spec(filename: str) -> ImageSpec:
+    with tables.open_file(filename, mode="r") as h5file:
+        x_coordinates = h5file.root.x_coordinates.read()
+        y_coordinates = h5file.root.y_coordinates.read()
+        crs = h5file.root._v_attrs.crs
+    imspec = ImageSpec(x_coordinates, y_coordinates, crs)
+    return imspec

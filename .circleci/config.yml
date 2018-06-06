@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: determinant/spatial-arch:0.1.1
+      - image: determinant/spatial:0.2
     working_directory: /usr/src/landshark
     steps:
       - checkout
@@ -10,7 +10,8 @@ jobs:
       - run: pip install .[dev]
       - run: make test-xml
       - run: make typecheck-xml
-      - run: make lint-xml
+      #- run: make lint-xml
+      - run: make integration-xml
       - store_artifacts:
           path: test_output/coverage
           destination: reports

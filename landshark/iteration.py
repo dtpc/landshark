@@ -1,21 +1,37 @@
+"""Utilities to support iteration."""
+
 import numpy as np
-from tqdm import tqdm
 import itertools
 
-def batch(it, batchsize, total_size):
-    with tqdm(total=total_size) as pbar:
-        while True:
-            batch = list(itertools.islice(it, batchsize))
-            if not batch:
-                return
-            yield batch
-            pbar.update(len(batch))
+from typing import Iterator, TypeVar, List, Tuple
+from landshark.basetypes import FixedSlice
 
-def random(p, random_state):
-    rnd = np.random.RandomState(random_state)
-    c = np.array([True, False])
-    p = np.array([p, 1.0 - p])
+T = TypeVar("T")
+def batch(it: Iterator[T], batchsize: int, total_size: int) \
+        -> Iterator[List[T]]:
     while True:
-        r = rnd.choice(c, p=p)
-        yield r
+        batch = list(itertools.islice(it, batchsize))
+        if not batch:
+            return
+        yield batch
 
+
+def batch_slices(batchsize: int, total_size: int) -> Iterator[FixedSlice]:
+    n = total_size // batchsize
+    ret = [(i * batchsize, (i + 1) * batchsize) for i in range(n)]
+    if total_size % batchsize != 0:
+        ret.append((n * batchsize, total_size))
+
+    # with tqdm(total=total_size) as pbar:
+    for start, stop in ret:
+        yield FixedSlice(start, stop)
+        # pbar.update(stop - start)
+
+def with_slices(it: Iterator[np.ndarray]) -> \
+        Iterator[Tuple[FixedSlice, np.ndarray]]:
+    """Needs iterator over ndarrays"""
+    start_idx = 0
+    for d in it:
+        end_idx = start_idx + d.shape[0]
+        yield FixedSlice(start_idx, end_idx), d
+        start_idx = end_idx

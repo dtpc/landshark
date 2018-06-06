@@ -105,6 +105,10 @@ ENV/
 
 # test stuff
 test_output/
+.pytest_cache/
 
-# configs
-configs/
+# data dir
+data/
+
+# pycharm
+.idea/

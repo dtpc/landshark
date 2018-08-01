@@ -75,3 +75,7 @@ def predict(modeldir: str, querydir: str, batchsize: int,
     write_geotiffs(y_dash_it, modeldir, strip_metadata,
                    list(percentiles), tag="{}of{}".format(strip, nstrips))
     return 0
+
+
+if __name__ == '__main__':
+    cli()

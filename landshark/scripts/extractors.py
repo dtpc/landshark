@@ -26,7 +26,7 @@ from landshark import metadata as meta
 from landshark.dataprocess import (ProcessQueryArgs, ProcessTrainingArgs,
                                    write_querydata, write_trainingdata)
 from landshark.featurewrite import read_feature_metadata, read_target_metadata
-from landshark.hread import CategoricalH5ArraySource, ContinuousH5ArraySource
+from landshark.hread import CategoricalH5Targets, ContinuousH5Targets
 from landshark.image import strip_image_spec
 from landshark.kfold import KFolds
 from landshark.scripts.logger import configure_logging
@@ -110,9 +110,9 @@ def traintest_entrypoint(targets: str,
     feature_metadata.halfwidth = halfwidth
     target_metadata = read_target_metadata(targets)
     batchsize = points_per_batch(feature_metadata, batchMB)
-    target_src = CategoricalH5ArraySource(targets) \
+    target_src = CategoricalH5Targets(targets) \
         if isinstance(target_metadata, meta.CategoricalTarget) \
-        else ContinuousH5ArraySource(targets)
+        else ContinuousH5Targets(targets)
 
     n_rows = len(target_src)
     kfolds = KFolds(n_rows, folds, random_seed)

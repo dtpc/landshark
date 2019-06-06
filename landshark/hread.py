@@ -25,12 +25,8 @@ from landshark.basetypes import (ArraySource, CategoricalArraySource,
 from landshark.featurewrite import read_feature_metadata, read_target_metadata
 
 
-class H5ArraySource(ArraySource):
-    """HDF5 array source for target data.
-
-    Note these are only used for targets! see the target specific metadata
-    call. Should probably be renamed.
-    """
+class H5Targets(ArraySource):
+    """HDF5 array source for target data."""
 
     _array_name = ""
 
@@ -70,13 +66,13 @@ class H5ArraySource(ArraySource):
         return data, coords
 
 
-class ContinuousH5ArraySource(H5ArraySource, ContinuousArraySource):
+class ContinuousH5Targets(H5Targets, ContinuousArraySource):
     """HDF5 array source for continuous target data."""
 
     _array_name = "continuous_data"
 
 
-class CategoricalH5ArraySource(H5ArraySource, CategoricalArraySource):
+class CategoricalH5Targets(H5Targets, CategoricalArraySource):
     """HDF5 array source for categorical target data."""
 
     _array_name = "categorical_data"

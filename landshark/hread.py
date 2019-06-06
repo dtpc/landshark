@@ -15,7 +15,7 @@
 # limitations under the License.
 
 from types import TracebackType
-from typing import Tuple, Union
+from typing import Tuple
 
 import numpy as np
 import tables
@@ -49,8 +49,7 @@ class H5ArraySource(ArraySource):
     def __enter__(self) -> None:
         self._hfile = tables.open_file(self._path, "r")
         self._carray = self._hfile.get_node("/" + self._array_name)
-        if hasattr(self._hfile.root, "coordinates"):
-            self._coords = self._hfile.root.coordinates
+        self._coords = self._hfile.root.coordinates
         super().__enter__()
 
     def __exit__(self,
@@ -59,25 +58,16 @@ class H5ArraySource(ArraySource):
                  ex_tb: TracebackType
                  ) -> None:
         self._hfile.close()
-        del(self._carray)
-        if hasattr(self, "_coords"):
-            del(self._coords)
-        del(self._hfile)
+        del(self._carray, self._coords, self._hfile)
         super().__exit__(ex_type, ex_val, ex_tb)
 
     def _arrayslice(self,
                     start: int,
                     end: int
-                    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-
-        # TODO: Note this is bad because I'm changing the return type.
-
+                    ) -> Tuple[np.ndarray, np.ndarray]:
         data = self._carray[start:end]
-        if hasattr(self, "_coords"):
-            coords = self._coords[start:end]
-            return data, coords
-        else:
-            return data
+        coords = self._coords[start:end]
+        return data, coords
 
 
 class ContinuousH5ArraySource(H5ArraySource, ContinuousArraySource):

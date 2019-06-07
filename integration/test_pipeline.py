@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 from glob import glob
+from itertools import cycle
 from typing import Any
 
 import pytest
@@ -39,7 +40,9 @@ model_files = {
 }
 
 training_args = {
-    "landshark": ["--epochs", "200", "--iterations", "5"],
+    "landshark": [
+        "--epochs", "200", "--iterations", "5",
+    ],
     "skshark": []
 }
 
@@ -80,6 +83,9 @@ def whichalgo(request: FixtureRequest) -> Any:
     return request.param
 
 
+kfold_block_pxs = cycle([None, 10, 27])
+
+
 def import_tifs(cat_dir, con_dir, feature_string, ncpus):
     tif_import_args = ["--categorical", cat_dir, "--continuous", con_dir,
                        "--ignore-crs"]
@@ -106,9 +112,15 @@ def import_targets(target_dir, target_name, target_flags, ncpus):
 
 
 def extract_training_data(target_file, target_name, ncpus):
-    _run(["landshark-extract", "--nworkers", ncpus, "--batch-mb", BATCH_MB,
-          "traintest", "--features", "features_sirsam.hdf5", "--split", 1, 10,
-          "--targets", target_file, "--name", "sirsam"])
+    cmd = [
+        "landshark-extract", "--nworkers", ncpus, "--batch-mb", BATCH_MB,
+        "traintest", "--features", "features_sirsam.hdf5", "--split", 1, 10,
+        "--targets", target_file, "--name", "sirsam"
+    ]
+    b = next(kfold_block_pxs)
+    if b is not None:
+        cmd.extend(["--kfold_block_px", str(b)])
+    _run(cmd)
     trainingdata_folder = "traintest_sirsam_fold1of10"
     assert os.path.isdir(trainingdata_folder)
     return trainingdata_folder

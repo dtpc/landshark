@@ -37,11 +37,10 @@ def query(data: Iterator[List[bytes]],
     writer.close()
 
 
-def training(data: Iterator[List[bytes]],
+def training(data_folds: Iterator[Tuple[List[bytes], np.ndarray]],
              n_total: int,
              output_directory: str,
              testfold: int,
-             folds: Iterator[np.ndarray]
              ) -> None:
     test_directory = os.path.join(output_directory, "testing")
     if not os.path.exists(test_directory):
@@ -49,7 +48,7 @@ def training(data: Iterator[List[bytes]],
     writer = _MultiFileWriter(output_directory, tag="train")
     test_writer = _MultiFileWriter(test_directory, tag="test")
 
-    for d, f in zip(data, folds):
+    for d, f in data_folds:
         train_batch, test_batch = _split_on_mask(d, f, testfold)
         writer.add(train_batch)
         test_writer.add(test_batch)

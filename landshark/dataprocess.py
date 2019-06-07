@@ -28,7 +28,7 @@ from landshark.hread import H5Features
 from landshark.image import (ImageSpec, image_to_world, indices_strip,
                              random_indices, world_to_image)
 from landshark.iteration import batch_slices
-from landshark.kfold import KFolds
+from landshark.kfold import KFolder
 from landshark.metadata import FeatureSet
 from landshark.multiproc import task_list
 from landshark.patch import PatchMaskRowRW, PatchRowRW
@@ -46,7 +46,7 @@ class ProcessTrainingArgs(NamedTuple):
     image_spec: ImageSpec
     halfwidth: int
     testfold: int
-    folds: KFolds
+    folds: KFolder
     directory: str
     batchsize: int
     nworkers: int
@@ -232,13 +232,16 @@ class _TrainingDataProcessor(Worker):
         self.image_spec = image_spec
         self.halfwidth = halfwidth
 
-    def __call__(self, values: Tuple[np.ndarray, np.ndarray]) -> DataArrays:
+    def __call__(
+        self, values: Tuple[np.ndarray, np.ndarray]
+    ) -> Tuple[List[bytes], np.ndarray]:
         if not self.feature_source:
             self.feature_source = H5Features(self.feature_path)
         targets, coords = values
         arrays = _process_training(coords, targets, self.feature_source,
                                    self.image_spec, self.halfwidth)
-        return arrays
+        strings = serialise(arrays)
+        return strings, arrays.image_indices
 
 
 class _QueryDataProcessor(Worker):
@@ -275,18 +278,17 @@ class Serialised(Worker):
 
 
 def write_trainingdata(args: ProcessTrainingArgs) -> None:
-    log.info("Testing data is fold {} of {}".format(args.testfold,
-                                                    args.folds.K))
+    log.info(f"Testing data is fold {args.testfold} of {args.folds.K}")
     log.info("Writing training data to tfrecord in {}-point batches".format(
         args.batchsize))
     n_rows = len(args.target_src)
-    worker = _TrainingDataProcessor(args.feature_path, args.image_spec,
-                                    args.halfwidth)
-    sworker = Serialised(worker)
+    worker = _TrainingDataProcessor(
+        args.feature_path, args.image_spec, args.halfwidth
+    )
     tasks = list(batch_slices(args.batchsize, n_rows))
-    out_it = task_list(tasks, args.target_src, sworker, args.nworkers)
-    fold_it = args.folds.iterator(args.batchsize)
-    tfwrite.training(out_it, n_rows, args.directory, args.testfold, fold_it)
+    data_it = task_list(tasks, args.target_src, worker, args.nworkers)
+    data_fold_it = ((d, args.folds(indices)) for d, indices in data_it)
+    tfwrite.training(data_fold_it, n_rows, args.directory, args.testfold)
 
 
 def write_querydata(args: ProcessQueryArgs) -> None:

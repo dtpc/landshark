@@ -17,7 +17,7 @@
 import logging
 import os
 from multiprocessing import cpu_count
-from typing import NamedTuple, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 import click
 
@@ -28,7 +28,7 @@ from landshark.dataprocess import (ProcessQueryArgs, ProcessTrainingArgs,
 from landshark.featurewrite import read_feature_metadata, read_target_metadata
 from landshark.hread import CategoricalH5Targets, ContinuousH5Targets
 from landshark.image import strip_image_spec
-from landshark.kfold import KFolds
+from landshark.kfold import BlockedKFolder, KFolder
 from landshark.scripts.logger import configure_logging
 from landshark.util import points_per_batch
 
@@ -79,6 +79,8 @@ def cli(ctx: click.Context,
 @click.option("--halfwidth", type=int, default=0,
               help="half width of patch size. Patch side length is "
               "2 x halfwidth + 1")
+@click.option("--kfold_block_px", type=int,
+              help="Width (in pixels)of image blocks for grouping k-folds.")
 @click.pass_context
 def traintest(ctx: click.Context,
               targets: str,
@@ -86,13 +88,15 @@ def traintest(ctx: click.Context,
               random_seed: int,
               name: str,
               features: str,
-              halfwidth: int
+              halfwidth: int,
+              kfold_block_px: int,
               ) -> None:
     """Extract training and testing data to train and validate a model."""
     fold, nfolds = split
     catching_f = errors.catch_and_exit(traintest_entrypoint)
     catching_f(targets, fold, nfolds, random_seed, name, halfwidth,
-               ctx.obj.nworkers, features, ctx.obj.batchMB)
+               ctx.obj.nworkers, features, ctx.obj.batchMB,
+               kfold_block_px=kfold_block_px)
 
 
 def traintest_entrypoint(targets: str,
@@ -103,7 +107,8 @@ def traintest_entrypoint(targets: str,
                          halfwidth: int,
                          nworkers: int,
                          features: str,
-                         batchMB: float
+                         batchMB: float,
+                         kfold_block_px: Optional[int] = None,
                          ) -> None:
     """Get training data."""
     feature_metadata = read_feature_metadata(features)
@@ -114,8 +119,14 @@ def traintest_entrypoint(targets: str,
         if isinstance(target_metadata, meta.CategoricalTarget) \
         else ContinuousH5Targets(targets)
 
-    n_rows = len(target_src)
-    kfolds = KFolds(n_rows, folds, random_seed)
+    if kfold_block_px is None:
+        kfolders = KFolder(folds, random_seed)
+    else:
+        im_shape = (
+            feature_metadata.image.width,
+            feature_metadata.image.height
+        )
+        kfolders = BlockedKFolder(im_shape, kfold_block_px, folds, random_seed)
 
     directory = os.path.join(os.getcwd(), "traintest_{}_fold{}of{}".format(
         name, testfold, folds))
@@ -126,7 +137,7 @@ def traintest_entrypoint(targets: str,
                                image_spec=feature_metadata.image,
                                halfwidth=halfwidth,
                                testfold=testfold,
-                               folds=kfolds,
+                               folds=kfolders,
                                directory=directory,
                                batchsize=batchsize,
                                nworkers=nworkers)
@@ -135,7 +146,7 @@ def traintest_entrypoint(targets: str,
                                       features=feature_metadata,
                                       nfolds=folds,
                                       testfold=testfold,
-                                      fold_counts=kfolds.counts)
+                                      fold_counts=kfolders.counts)
     training_metadata.save(directory)
     log.info("Training import complete")
 

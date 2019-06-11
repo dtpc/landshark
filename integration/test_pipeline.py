@@ -120,8 +120,12 @@ def extract_training_data(target_file, target_name, ncpus):
     b = next(kfold_block_pxs)
     if b is not None:
         cmd.extend(["--kfold_block_px", str(b)])
+        blklabel = f"blk{b}"
+    else:
+        blklabel = ""
+
     _run(cmd)
-    trainingdata_folder = "traintest_sirsam_fold1of10"
+    trainingdata_folder = f"traintest_sirsam_{blklabel}fold1of10"
     assert os.path.isdir(trainingdata_folder)
     return trainingdata_folder
 

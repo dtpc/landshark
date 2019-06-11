@@ -17,6 +17,7 @@
 import logging
 import os
 from multiprocessing import cpu_count
+from pathlib import Path
 from typing import NamedTuple, Optional, Tuple
 
 import click
@@ -121,15 +122,16 @@ def traintest_entrypoint(targets: str,
 
     if kfold_block_px is None:
         kfolders = KFolder(folds, random_seed)
+        foldlabel = "fold"
     else:
         im_shape = (
             feature_metadata.image.width,
             feature_metadata.image.height
         )
         kfolders = BlockedKFolder(im_shape, kfold_block_px, folds, random_seed)
+        foldlabel = f"blk{kfold_block_px}fold"
 
-    directory = os.path.join(os.getcwd(), "traintest_{}_fold{}of{}".format(
-        name, testfold, folds))
+    directory = Path.cwd() / f"traintest_{name}_{foldlabel}{testfold}of{folds}"
 
     args = ProcessTrainingArgs(name=name,
                                feature_path=features,
@@ -138,7 +140,7 @@ def traintest_entrypoint(targets: str,
                                halfwidth=halfwidth,
                                testfold=testfold,
                                folds=kfolders,
-                               directory=directory,
+                               directory=str(directory),
                                batchsize=batchsize,
                                nworkers=nworkers)
     write_trainingdata(args)
@@ -147,7 +149,7 @@ def traintest_entrypoint(targets: str,
                                       nfolds=folds,
                                       testfold=testfold,
                                       fold_counts=kfolders.counts)
-    training_metadata.save(directory)
+    training_metadata.save(str(directory))
     log.info("Training import complete")
 
 

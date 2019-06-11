@@ -43,7 +43,7 @@ class KFolder:
 
 
 class BlockedKFolder(KFolder):
-    """Generate random k-folds indices grouped together by image block."""
+    """Generate random k-fold indices grouped together by image block."""
 
     def __init__(
         self,

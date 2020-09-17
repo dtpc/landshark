@@ -95,6 +95,11 @@ def _get_data(records_train: List[str], records_test: List[str],
         ord_array_test, cat_array_test, y_array_test = _extract(Xo, Xom, Xc,
                                                                 Xcm, Y, sess)
 
+    npz_file = 'train_test_arrays'
+    np.savez(npz_file, ord_array=ord_array, y_array=y_array,
+             ord_array_test=ord_array_test, y_array_test=y_array_test)
+    print("Saved train/test data:", npz_file)
+
     return (ord_array, cat_array, y_array,
             ord_array_test, cat_array_test, y_array_test)
 
